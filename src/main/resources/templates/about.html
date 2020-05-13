@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.w3.org/1999/xhtml">
+<head  th:replace="_fragments :: head(~{::title})">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>关于我</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/semantic-ui/2.2.4/semantic.min.css">
+  <link rel="stylesheet" href="../static/css/me.css">
+
+  <script src="https://cdn.bootcss.com/jquery/3.4.1/jquery.min.js"></script>
+  <script src="https://eqcn.ajz.miesnfu.com/wp-content/plugins/wp-3d-pony/live2dw/lib/L2Dwidget.min.js"></script>
+  <style>
+    #canvas {
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="canvas-box">
+  <canvas id="canvas"></canvas>
+</div>
+<script>
+  (function () {
+    var lastTime = 0;
+    // 浏览器引擎
+    var vendors = ['ms', 'moz', 'webkit', 'o'];
+    // window.requestAnimationFrame() 告诉浏览器——你希望执行一个动画，并且要求浏览器在下次重绘之前调用指定的回调函数更新动画。
+    for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+      window.requestAnimationFrame = window[vendors[x] + 'RequestAnimationFrame'];
+      window.cancelAnimationFrame = window[vendors[x] + 'CancelAnimationFrame'] || window[vendors[x] + 'CancelRequestAnimationFrame'];
+    }
+    if (!window.requestAnimationFrame) window.requestAnimationFrame = function (callback, element) {
+      var currTime = new Date().getTime();
+      var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+      var id = window.setTimeout(function () {
+        callback(currTime + timeToCall);
+      }, timeToCall);
+      lastTime = currTime + timeToCall;
+      return id;
+    };
+    if (!window.cancelAnimationFrame) window.cancelAnimationFrame = function (id) { clearTimeout(id); };
+  }());
+
+  (function () {
+
+    // 初始化canvas
+    function canvasInit(canvasConfig) {
+      // 如果canvasConfig为null或undefined，则将o初始化空对象
+      canvasConfig = canvasConfig || {};
+      // 得到body标签
+      var body = document.getElementsByTagName("body")[0];
+      // 得到canvas标签
+      var canvasObj = document.getElementById("canvas");
+      // 定义存储数据对象（元素 鼠标位置 点位置 配置）
+      var canvas = {
+        element: canvasObj,
+        mouse: undefined,
+        points: [],
+        config: {
+          vx: canvasConfig.vx || 4,
+          vy: canvasConfig.vy || 4,
+          height: canvasConfig.height || 2,
+          width: canvasConfig.width || 2,
+          count: canvasConfig.count || 200,
+          color: canvasConfig.color || "121, 162, 185",
+          stroke: canvasConfig.stroke || "130,255,255",
+          dist: canvasConfig.dist || 6000,
+          e_dist: canvasConfig.e_dist || 20000,
+          max_conn: 10
+        }
+      };
+      // 得到canvas对象
+      if (canvas.element.getContext("2d")) {
+        canvas.context = canvas.element.getContext("2d");
+      } else {
+        return null;
+      }
+      // 改变canvas大小
+      canvasSize(canvas.element);
+      // 当窗口改变的时候修改canvas大小 适应窗口
+      window.onresize = function () {
+        canvasSize(canvas.element);
+      }
+      // 鼠标移动的时候 记录鼠标的位置
+      body.onmousemove = function (e) {
+        var event = e || window.event;
+        canvas.mouse = {
+          x: event.clientX,
+          y: event.clientY
+        };
+      }
+      // 当鼠标不在当前body上的时候定义鼠标为空
+      document.onmouseleave = function () {
+        canvas.mouse = undefined;
+      }
+      // 绘制点
+      drawPoint(canvas);
+    }
+
+    // 改变canvas大小 适应窗口大小
+    function canvasSize(canvas) {
+      var width = window.innerWidth;
+      var height = window.innerHeight;
+      canvas.width = width || window.innerWeight || document.documentElement.clientWidth || document.body.clientWidth;
+      canvas.height = height || window.innerWeight || document.documentElement.clientHeight || document.body.clientHeight;
+    }
+
+    // 绘制所有的点
+    function drawPoint(canvas) {
+      var context = canvas.context, point, dist;
+      // 清空画布
+      context.clearRect(0, 0, canvas.element.width, canvas.element.height);
+      // 起始一条路径
+      context.beginPath();
+      // 设置用于填充绘画的颜色
+      context.fillStyle = "rgb(" + canvas.config.color + ")";
+      // 遍历所有的点
+      for (var i = 0, len = canvas.config.count; i < len; ++i) {
+        // 如果canvas.points存储的点没有到config.count的数量 就随机生成一个点（随机位置 随机速度）
+        if (canvas.points.length != canvas.config.count) {
+          point = {
+            x: Math.floor(Math.random() * canvas.element.width),
+            y: Math.floor(Math.random() * canvas.element.height),
+            vx: canvas.config.vx / 2 - Math.random() * canvas.config.vx,
+            vy: canvas.config.vy / 2 - Math.random() * canvas.config.vy
+          }
+        } else {
+          // 否则点继续前进
+          point = borderPoint(canvas.points[i], canvas);
+        }
+        // 绘制小矩形
+        context.fillRect(point.x - canvas.config.width / 2, point.y - canvas.config.height / 2, canvas.config.width, canvas.config.height);
+        // 记录点的信息
+        canvas.points[i] = point;
+      }
+      // 绘制点与点之间的连线
+      drawLine(context, canvas, canvas.mouse);
+      // 创建从当前点回到起始点的路径
+      context.closePath();
+      // 浏览器在下次重绘之前调用drawPoint(canvas)
+      window.canvasAnimate = requestAnimationFrame(function () {
+        drawPoint(canvas)
+      })
+    }
+
+    // 点继续前进 撞到边界则改变方向
+    function borderPoint(point, canvas) {
+      var p = point;
+      if (point.x <= 0 || point.x >= canvas.element.width) {
+        p.vx = -p.vx;
+        p.x += p.vx;
+      } else if (point.y <= 0 || point.y >= canvas.element.height) {
+        p.vy = -p.vy;
+        p.y += p.vy;
+      } else {
+        p = {
+          x: p.x + p.vx,
+          y: p.y + p.vy,
+          vx: p.vx,
+          vy: p.vy
+        }
+      }
+      return p;
+    }
+
+    // 绘制点与点 点与鼠标之间的直线
+    function drawLine(context, canvas, mouse) {
+      context = context || canvas.context;
+      // 循环所有点
+      for (var i = 0, len = canvas.config.count; i < len; ++i) {
+        // 记录点的连接数
+        canvas.points[i].max_conn = 0;
+        // 比对其他所以的点
+        for (var j = 0; j < len; ++j) {
+          if (i != j) {
+            // 计算两点之间的距离
+            dist = Math.round(canvas.points[i].x - canvas.points[j].x) * Math.round(canvas.points[i].x - canvas.points[j].x)
+                    + Math.round(canvas.points[i].y - canvas.points[j].y) * Math.round(canvas.points[i].y - canvas.points[j].y);
+            // 如果两点之间的距离小于config.dist 并且点的连接数小于config.max_conn 则绘制两点之间的直线
+            if (dist <= canvas.config.dist && canvas.points[i].max_conn < canvas.config.max_conn) {
+              canvas.points[i].max_conn++;
+              context.lineWidth = 0.5 - dist / canvas.config.dist;
+              context.strokeStyle = "rgba(" + canvas.config.stroke + "," + (1 - dist / canvas.config.dist) + ")";
+              context.beginPath();
+              context.moveTo(canvas.points[i].x, canvas.points[i].y);
+              context.lineTo(canvas.points[j].x, canvas.points[j].y);
+              context.stroke();
+            }
+          }
+        }
+        // 如果鼠标在body里面
+        if (mouse) {
+          // 计算鼠标和点之间的距离
+          dist = Math.round(canvas.points[i].x - mouse.x) * Math.round(canvas.points[i].x - mouse.x)
+                  + Math.round(canvas.points[i].y - mouse.y) * Math.round(canvas.points[i].y - mouse.y);
+          // 如果鼠标和点之间的距离小于鼠标吸附加速距离 大于点吸附距离 则朝着鼠标移动
+          if (dist > canvas.config.dist && dist <= canvas.config.e_dist) {
+            canvas.points[i].x = canvas.points[i].x + (mouse.x - canvas.points[i].x) / 20;
+            canvas.points[i].y = canvas.points[i].y + (mouse.y - canvas.points[i].y) / 20;
+          }
+          // 如果鼠标和点之间的距离小于点吸附距离 则绘制直线
+          if (dist <= canvas.config.e_dist) {
+            context.lineWidth = 1;
+            context.strokeStyle = "rgba(" + canvas.config.stroke + "," + (1 - dist / canvas.config.e_dist) + ")";
+            context.beginPath();
+            context.moveTo(canvas.points[i].x, canvas.points[i].y);
+            context.lineTo(mouse.x, mouse.y);
+            context.stroke();
+          }
+        }
+      }
+    }
+
+    return canvasInit(config);
+  })();
+
+
+  // 配置
+  var config = {
+    vx: 4,                  // 小球x轴速度,正为右，负为左
+    vy: 4,                  // 小球y轴速度
+    height: 2,              // 小球高宽，其实为正方形，所以不宜太大
+    width: 2,
+    count: 500,             // 点个数
+    color: "121, 162, 185", // 点颜色
+    stroke: "130,255,255",  // 线条颜色
+    dist: 6000,             // 点吸附距离
+    e_dist: 20000,          // 鼠标吸附加速距离
+    max_conn: 10            // 点到点最大连接数
+  }
+</script>
+<script>
+  L2Dwidget.init({
+    "model": {
+      jsonPath: "https://cdn.jsdelivr.net/gh/nineya/blog_file/live2d-widget-model-shizuku/assets/shizuku.model.json",
+      "scale": 1
+    },
+    "display": {
+      "position": "right", //显示位置左、右
+      "width": 75,  // 宽度
+      "height": 150, //高度
+    },
+    "mobile": {
+      "show": true,	// 移动端显示
+      "scale": 0.2	//移动端显示缩小比例
+    },
+    "react": {
+      "opacityDefault": 0.9,	//默认透明度
+      "opacityOnHover": 0.2	//鼠标选中透明度
+    }
+  });
+</script>
+  <!--导航-->
+  <nav th:replace="_fragments :: menu(5)" class="ui inverted attached segment m-padded-tb-mini m-shadow-small" >
+    <div class="ui container">
+      <div class="ui inverted secondary stackable menu">
+        <h2 class="ui teal header item">Blog</h2>
+        <a href="#" class=" m-item item m-mobile-hide"><i class=" home icon"></i>首页</a>
+        <a href="#" class=" m-item item m-mobile-hide"><i class="idea icon"></i>分类</a>
+        <a href="#" class="m-item item m-mobile-hide"><i class="tags icon"></i>标签</a>
+        <a href="#" class="m-item item m-mobile-hide"><i class="clone icon"></i>归档</a>
+        <a href="#" class="active m-item item m-mobile-hide"><i class=" info icon"></i>关于我</a>
+        <div class="right m-item item m-mobile-hide">
+          <div class="ui icon inverted transparent input m-margin-tb-tiny">
+            <input type="text" placeholder="Search....">
+            <i class="search link icon"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    <a href="#" class="ui menu toggle black icon button m-right-top m-mobile-show">
+      <i class="sidebar icon"></i>
+    </a>
+  </nav>
+
+  <!--中间内容-->
+  <div  class="m-container m-padded-tb-big animated fadeIn">
+    <div class="ui container">
+
+      <div class="ui stackable grid">
+        <div class="eleven wide column">
+          <div class="ui segment">
+            <img src="https://unsplash.it/800/600?image=1005" alt="" class="ui rounded image">
+          </div>
+        </div>
+        <div class="five wide column">
+          <div class="ui top attached segment">
+            <div class="ui header">关于我</div>
+          </div>
+          <div class="ui attached segment">
+            <p class="m-text">leedwet，一个独立开发者，折腾在 0 和 1 世界的大叔；一个终身学习者，誓将学习无限循环. 希望结识可以共同成长的小伙伴.</p>
+            <p class="m-text">热爱编程，喜欢折腾，正在探索高效学习编程技术的方法...</p>
+          </div>
+          <div class="ui attached segment">
+            <div class="ui orange basic left pointing label">编程</div>
+            <div class="ui orange basic left pointing label">写作</div>
+            <div class="ui orange basic left pointing label">思考</div>
+            <div class="ui orange basic left pointing label">运动</div>
+          </div>
+          <div class="ui attached segment">
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">Java</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">JavaScript</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">Node</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">React</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">RN</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">MYSQL</div>
+            <div class="ui teal basic left pointing label m-margin-tb-tiny">...</div>
+          </div>
+          <div class="ui bottom attached segment">
+            <a href="" class="ui github circular icon button" data-content="lqingtian"><i class="github icon"></i></a>
+            <a href="#" class="ui wechat circular icon button"><i class="wechat icon"></i></a>
+            <a href="#" class="ui qq circular icon button" data-content="814962963" data-position="bottom center"><i class="qq icon"></i></a>
+          </div>
+
+          <div class="ui wechat-qr flowing popup transition hidden">
+            <img src="../static/images/wechat.png" alt="" class="ui rounded image" style="width: 110px">
+          </div>
+          </div>
+      </div>
+
+    </div>
+  </div>
+
+  <br>
+  <br>
+  <!--底部footer-->
+  <footer th:replace="_fragments :: footer" class="ui inverted vertical segment m-padded-tb-massive">
+    <div class="ui center aligned container">
+      <div class="ui inverted divided stackable grid">
+        <div class="three wide column">
+          <div class="ui inverted link list">
+            <div class="item">
+              <img src="../static/images/wechat.png" class="ui rounded image" alt="" style="width: 110px">
+            </div>
+          </div>
+        </div>
+        <div class="three wide column">
+          <h4 class="ui inverted header m-text-thin m-text-spaced " >最新博客</h4>
+          <div class="ui inverted link list">
+            <a href="#" class="item m-text-thin">用户故事（User Story）</a>
+            <a href="#" class="item m-text-thin">用户故事（User Story）</a>
+            <a href="#" class="item m-text-thin">用户故事（User Story）</a>
+          </div>
+        </div>
+        <div class="three wide column">
+          <h4 class="ui inverted header m-text-thin m-text-spaced ">联系我</h4>
+          <div class="ui inverted link list">
+            <a href="#" class="item m-text-thin">Email：99lijianxiong@gmail.com</a>
+            <a href="#" class="item m-text-thin">QQ：814962963</a>
+          </div>
+        </div>
+        <div class="seven wide column">
+          <h4 class="ui inverted header m-text-thin m-text-spaced ">Blog</h4>
+          <p class="m-text-thin m-text-spaced m-opacity-mini">这是我的个人博客、会分享关于编程、写作、思考相关的任何内容，希望可以给来到这儿的人有所帮助...</p>
+        </div>
+      </div>
+      <div class="ui inverted section divider"></div>
+      <p class="m-text-thin m-text-spaced m-opacity-tiny">Copyright © 2019 - 2020 Leedwet Designed by LJX</p>
+    </div>
+
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.2/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/semantic-ui/2.2.4/semantic.min.js"></script>
+
+  <script>
+    $('.menu.toggle').click(function () {
+      $('.m-item').toggleClass('m-mobile-hide');
+    });
+
+    $('.wechat').popup({
+      popup : $('.wechat-qr'),
+      position: 'bottom center'
+    });
+    $('.qq').popup();
+    $('.github').popup();
+  </script>
+</body>
+</html>
